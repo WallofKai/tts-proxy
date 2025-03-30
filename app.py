@@ -55,7 +55,9 @@ def generate():
 
         return jsonify({"audio_url": audio_data_url})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    print("Error during synthesis:", str(e))
+    return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app
