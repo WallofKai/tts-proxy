@@ -7,9 +7,8 @@ import textwrap
 app = Flask(__name__)
 
 def split_text(text, max_chars=900):
-    # Break at sentence boundaries (preferably) or spaces
-    wrapped = textwrap.wrap(text, max_chars, break_long_words=False, break_on_hyphens=False)
-    return wrapped
+    # Break at natural sentence boundaries or safe chunks
+    return textwrap.wrap(text, max_chars, break_long_words=False, break_on_hyphens=False)
 
 def synthesize_chunk(text, voice, api_key):
     tts_url = "https://texttospeech.googleapis.com/v1/text:synthesize"
@@ -48,16 +47,16 @@ def generate():
             audio_b64 = synthesize_chunk(chunk, voice, api_key)
             audio_segments.append(base64.b64decode(audio_b64))
 
-        # Concatenate all decoded audio bytes
+        # Combine all audio bytes
         full_audio = b''.join(audio_segments)
         audio_b64_combined = base64.b64encode(full_audio).decode("utf-8")
         audio_data_url = f"data:audio/mp3;base64,{audio_b64_combined}"
 
         return jsonify({"audio_url": audio_data_url})
+    
     except Exception as e:
-    print("Error during synthesis:", str(e))
-    return jsonify({"error": str(e)}), 500
-
+        print("Error during synthesis:", str(e))  # Visible in Render logs
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app
+    app.run(host='0.0.0.0', port=5000)
