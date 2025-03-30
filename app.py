@@ -1,13 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import requests
 import os
 import base64
 import textwrap
+from datetime import datetime
 
 app = Flask(__name__)
+STATIC_DIR = os.path.join(os.getcwd(), "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
 
 def split_text(text, max_chars=900):
-    # Break at natural sentence boundaries or safe chunks
     return textwrap.wrap(text, max_chars, break_long_words=False, break_on_hyphens=False)
 
 def synthesize_chunk(text, voice, api_key):
@@ -15,19 +17,14 @@ def synthesize_chunk(text, voice, api_key):
     headers = {"X-Goog-Api-Key": api_key}
     payload = {
         "input": {"text": text},
-        "voice": {
-            "languageCode": "en-US",
-            "name": voice
-        },
-        "audioConfig": {
-            "audioEncoding": "MP3"
-        }
+        "voice": {"languageCode": "en-US", "name": voice},
+        "audioConfig": {"audioEncoding": "MP3"}
     }
 
     res = requests.post(tts_url, headers=headers, json=payload)
     if res.status_code != 200:
         raise Exception(f"TTS API error: {res.text}")
-    return res.json()["audioContent"]
+    return base64.b64decode(res.json()["audioContent"])
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -41,22 +38,25 @@ def generate():
 
     try:
         chunks = split_text(text)
-        audio_segments = []
+        audio_segments = [synthesize_chunk(chunk, voice, api_key) for chunk in chunks]
+        full_audio = b"".join(audio_segments)
 
-        for chunk in chunks:
-            audio_b64 = synthesize_chunk(chunk, voice, api_key)
-            audio_segments.append(base64.b64decode(audio_b64))
+        # Save to static folder
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"audio_{timestamp}.mp3"
+        file_path = os.path.join(STATIC_DIR, filename)
 
-        # Combine all audio bytes
-        full_audio = b''.join(audio_segments)
-        audio_b64_combined = base64.b64encode(full_audio).decode("utf-8")
-        audio_data_url = f"data:audio/mp3;base64,{audio_b64_combined}"
+        with open(file_path, "wb") as f:
+            f.write(full_audio)
 
-        return jsonify({"audio_url": audio_data_url})
-    
+        file_url = f"https://tts-proxy.onrender.com/static/{filename}"
+        return jsonify({"audio_url": file_url})
+
     except Exception as e:
-        print("Error during synthesis:", str(e))  # Visible in Render logs
+        print("Error:", str(e))
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# Optional direct access to static files (just in case)
+@app.route('/static/<filename>')
+def static_file(filename):
+    return send_from_directory(STATIC_DIR, filename)
